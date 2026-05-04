@@ -1,0 +1,37 @@
+libos.entrypoint = "{{ entrypoint }}"
+
+loader.log_level = "error"
+
+loader.argv = ["python3", "enclave_llm.py"]
+
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
+loader.env.HOME = "/home/azureuser"
+loader.env.ENCLAVE_PORT = "7777"
+
+fs.mounts = [
+  { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr",              uri = "file:/usr" },
+  { path = "/etc",              uri = "file:/etc" },
+  { path = "/enclave",          uri = "file:." },
+]
+
+# TCP sockets pass through Gramine to the host network stack transparently.
+# This is the correct IPC mechanism for enclave-to-host communication.
+sys.insecure__allow_eventfd = true
+
+sgx.debug = true
+sgx.edmm_enable = false
+sgx.enclave_size = "256M"
+sgx.max_threads = 4
+
+sgx.trusted_files = [
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/lib/x86_64-linux-gnu/",
+  "file:/usr/lib/python3.12/",
+  "file:/usr/lib/python3/",
+  "file:/usr/bin/python3.12",
+  "file:/usr/bin/python3",
+  "file:enclave_llm.py",
+]

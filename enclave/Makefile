@@ -5,18 +5,20 @@ PYTHON       ?= $(shell which python3)
 
 all: sgx
 
-hello.manifest: hello.manifest.template
+enclave_llm.manifest: enclave_llm.manifest.template
 	gramine-manifest \
 		-Darch_libdir=$(ARCH_LIBDIR) \
 		-Dentrypoint=$(PYTHON) \
 		$< $@
 
-hello.manifest.sgx hello.sig: hello.manifest
+enclave_llm.manifest.sgx enclave_llm.sig: enclave_llm.manifest
 	gramine-sgx-sign \
-		--manifest hello.manifest \
-		--output hello.manifest.sgx
+		--manifest enclave_llm.manifest \
+		--output enclave_llm.manifest.sgx
 
-sgx: hello.manifest.sgx hello.sig
+sgx: enclave_llm.manifest.sgx enclave_llm.sig
 
 clean:
-	rm -f hello.manifest hello.manifest.sgx hello.sig hello.token
+	rm -f enclave_llm.manifest enclave_llm.manifest.sgx \
+	      enclave_llm.sig enclave_llm.token \
+	      hello.manifest hello.manifest.sgx hello.sig hello.token
