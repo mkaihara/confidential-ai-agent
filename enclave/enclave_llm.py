@@ -1,8 +1,6 @@
 """
-enclave_llm.py — runs inside SGX via Gramine.
-Phase 1: TCP echo server. No LLM yet.
-Uses TCP (not Unix socket) because Gramine encrypts UDS and
-requires both ends to be inside Gramine for UDS communication.
+enclave_llm.py — diagnostic version.
+Prints the full exception chain for connection errors.
 """
 
 import socket
@@ -11,6 +9,7 @@ import struct
 import sys
 import os
 import logging
+import traceback
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -21,6 +20,36 @@ log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ENCLAVE_PORT", "7777"))
+CERT_PATH = "/enclave/.venv/lib/python3.12/site-packages/certifi/cacert.pem"
+
+_anthropic_client = None
+
+
+def get_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        import httpx
+        import anthropic
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        http_client = httpx.Client(verify=CERT_PATH)
+        _anthropic_client = anthropic.Anthropic(
+            api_key=api_key,
+            http_client=http_client,
+        )
+        log.info("Anthropic client initialized")
+    return _anthropic_client
+
+
+def call_llm(prompt: str) -> str:
+    client = get_client()
+    message = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text
 
 
 def send_message(sock: socket.socket, payload: dict) -> None:
@@ -60,20 +89,26 @@ def handle_client(conn: socket.socket) -> None:
                 log.info("Client disconnected")
                 break
 
-            log.info(f"Received request: {request}")
             request_type = request.get("type")
+            log.info(f"Received request type: {request_type}")
 
             if request_type == "ping":
                 response = {"type": "pong", "status": "ok"}
 
             elif request_type == "prompt":
                 prompt = request.get("prompt", "")
-                response = {
-                    "type": "response",
-                    "status": "ok",
-                    "result": f"ECHO from enclave (PID {os.getpid()}): {prompt}",
-                }
-
+                try:
+                    result = call_llm(prompt)
+                    response = {"type": "response", "status": "ok", "result": result}
+                except Exception as e:
+                    # Print full traceback to enclave stdout for diagnosis
+                    log.error(f"LLM call failed: {type(e).__name__}: {e}")
+                    log.error(f"Full traceback:\n{traceback.format_exc()}")
+                    response = {
+                        "type": "error",
+                        "status": "error",
+                        "message": f"{type(e).__name__}: {e}",
+                    }
             else:
                 response = {
                     "type": "error",
@@ -82,7 +117,7 @@ def handle_client(conn: socket.socket) -> None:
                 }
 
             send_message(conn, response)
-            log.info(f"Sent response: {response}")
+            log.info(f"Sent response type: {response.get('type')}")
 
     except Exception as e:
         log.error(f"Error handling client: {e}")
@@ -93,13 +128,20 @@ def handle_client(conn: socket.socket) -> None:
 def main() -> None:
     log.info(f"Enclave process starting (PID={os.getpid()})")
     log.info(f"Python {sys.version}")
-    log.info(f"Listening on {HOST}:{PORT}")
+
+    # Test basic TCP connectivity before accepting any client
+    log.info("Testing outbound TCP to api.anthropic.com:443 ...")
+    try:
+        test_sock = socket.create_connection(("api.anthropic.com", 443), timeout=10)
+        test_sock.close()
+        log.info("TCP connectivity to api.anthropic.com:443 OK")
+    except Exception as e:
+        log.error(f"TCP connectivity test FAILED: {type(e).__name__}: {e}")
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, PORT))
     server.listen(1)
-
     log.info(f"Ready — waiting for connections on port {PORT}")
 
     try:

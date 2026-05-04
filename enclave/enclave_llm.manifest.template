@@ -7,6 +7,9 @@ loader.argv = ["python3", "enclave_llm.py"]
 loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
 loader.env.HOME = "/home/azureuser"
 loader.env.ENCLAVE_PORT = "7777"
+loader.env.PYTHONPATH = "/enclave/.venv/lib/python3.12/site-packages"
+loader.env.PYTHONHOME = ""
+loader.env.ANTHROPIC_API_KEY = { passthrough = true }
 
 fs.mounts = [
   { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
@@ -16,14 +19,12 @@ fs.mounts = [
   { path = "/enclave",          uri = "file:." },
 ]
 
-# TCP sockets pass through Gramine to the host network stack transparently.
-# This is the correct IPC mechanism for enclave-to-host communication.
 sys.insecure__allow_eventfd = true
 
 sgx.debug = true
 sgx.edmm_enable = false
-sgx.enclave_size = "256M"
-sgx.max_threads = 4
+sgx.enclave_size = "512M"
+sgx.max_threads = 8
 
 sgx.trusted_files = [
   "file:{{ gramine.runtimedir() }}/",
@@ -32,6 +33,37 @@ sgx.trusted_files = [
   "file:/usr/lib/python3.12/",
   "file:/usr/lib/python3/",
   "file:/usr/bin/python3.12",
-  "file:/usr/bin/python3",
   "file:enclave_llm.py",
+  "file:.venv/lib/python3.12/site-packages/anthropic/",
+  "file:.venv/lib/python3.12/site-packages/httpx/",
+  "file:.venv/lib/python3.12/site-packages/httpcore/",
+  "file:.venv/lib/python3.12/site-packages/certifi/",
+  "file:.venv/lib/python3.12/site-packages/certifi/cacert.pem",
+  "file:.venv/lib/python3.12/site-packages/anyio/",
+  "file:.venv/lib/python3.12/site-packages/sniffio/",
+  "file:.venv/lib/python3.12/site-packages/idna/",
+  "file:.venv/lib/python3.12/site-packages/h11/",
+  "file:.venv/lib/python3.12/site-packages/pydantic/",
+  "file:.venv/lib/python3.12/site-packages/pydantic_core/",
+  "file:.venv/lib/python3.12/site-packages/annotated_types/",
+  "file:.venv/lib/python3.12/site-packages/distro/",
+  "file:.venv/lib/python3.12/site-packages/jiter/",
+  "file:.venv/lib/python3.12/site-packages/typing_extensions.py",
+  "file:.venv/lib/python3.12/site-packages/docstring_parser/",
+  "file:.venv/lib/python3.12/site-packages/typing_inspection/",
+]
+
+# These files are not secret but are required for correct operation.
+# /etc/resolv.conf — DNS resolver configuration, required for name resolution
+# /etc/hosts — local hostname mappings
+# /etc/os-release — read by the distro package (Anthropic SDK dependency)
+# /etc/nsswitch.conf — controls resolver lookup order (hosts → DNS)
+# /etc/ssl/certs/ — system CA bundle fallback
+sgx.allowed_files = [
+  "file:/etc/resolv.conf",
+  "file:/etc/hosts",
+  "file:/etc/host.conf",
+  "file:/etc/nsswitch.conf",
+  "file:/etc/os-release",
+  "file:/etc/gai.conf",
 ]

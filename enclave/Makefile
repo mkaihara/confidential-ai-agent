@@ -1,5 +1,5 @@
 ARCH_LIBDIR ?= /lib/$(shell $(CC) -dumpmachine)
-PYTHON       ?= $(shell which python3)
+PYTHON       ?= /usr/bin/python3.12
 
 .PHONY: all sgx clean
 
