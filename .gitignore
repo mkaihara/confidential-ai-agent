@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+*.pem
+*.key
+*.sig
+*.manifest.sgx
+*.token

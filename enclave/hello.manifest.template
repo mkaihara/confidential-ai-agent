@@ -1,0 +1,32 @@
+libos.entrypoint = "{{ entrypoint }}"
+
+loader.log_level = "error"
+
+loader.argv = ["python3", "hello.py"]
+
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
+loader.env.HOME = "/home/azureuser"
+
+fs.mounts = [
+  { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
+  { path = "/usr",              uri = "file:/usr" },
+  { path = "/etc",              uri = "file:/etc" },
+  { path = "/enclave",          uri = "file:." },
+]
+
+sgx.debug = true
+sgx.edmm_enable = false
+sgx.enclave_size = "256M"
+sgx.max_threads = 4
+
+sgx.trusted_files = [
+  "file:{{ gramine.runtimedir() }}/",
+  "file:{{ arch_libdir }}/",
+  "file:/usr/lib/x86_64-linux-gnu/",
+  "file:/usr/lib/python3.12/",
+  "file:/usr/lib/python3/",
+  "file:/usr/bin/python3.12",
+  "file:/usr/bin/python3",
+  "file:hello.py",
+]
