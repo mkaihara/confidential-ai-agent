@@ -1,6 +1,8 @@
 """
-enclave_llm.py — diagnostic version.
-Prints the full exception chain for connection errors.
+enclave_llm.py — runs inside SGX via Gramine.
+Phase 3: API key loaded from Gramine encrypted file.
+The wrap key is provisioned via /dev/attestation/keys/api_key
+before reading the encrypted secrets file.
 """
 
 import socket
@@ -9,7 +11,6 @@ import struct
 import sys
 import os
 import logging
-import traceback
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -20,9 +21,38 @@ log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ENCLAVE_PORT", "7777"))
+API_KEY_PATH = "/secrets/anthropic_api_key.txt"
 CERT_PATH = "/enclave/.venv/lib/python3.12/site-packages/certifi/cacert.pem"
+WRAP_KEY_PATH = "/dev/attestation/keys/api_key"
 
 _anthropic_client = None
+
+
+def provision_key() -> None:
+    """
+    Write the wrap key to Gramine's key provisioning interface.
+    This must happen before any encrypted file under key_name="api_key" is opened.
+    The key is read from the host environment here for bootstrapping.
+    In production this would come from a remote attestation flow.
+    """
+    wrap_key_hex = os.environ.get("WRAP_KEY_HEX", "")
+    if not wrap_key_hex:
+        raise RuntimeError("WRAP_KEY_HEX not set — cannot provision encryption key")
+    wrap_key_bytes = bytes.fromhex(wrap_key_hex)
+    if len(wrap_key_bytes) != 16:
+        raise RuntimeError(f"Wrap key must be 16 bytes, got {len(wrap_key_bytes)}")
+    with open(WRAP_KEY_PATH, "wb") as f:
+        f.write(wrap_key_bytes)
+    log.info("Wrap key provisioned to /dev/attestation/keys/api_key")
+
+
+def load_api_key() -> str:
+    with open(API_KEY_PATH, "r") as f:
+        key = f.read().strip()
+    if not key:
+        raise RuntimeError(f"API key file is empty: {API_KEY_PATH}")
+    log.info("API key loaded from encrypted storage")
+    return key
 
 
 def get_client():
@@ -30,9 +60,7 @@ def get_client():
     if _anthropic_client is None:
         import httpx
         import anthropic
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        api_key = load_api_key()
         http_client = httpx.Client(verify=CERT_PATH)
         _anthropic_client = anthropic.Anthropic(
             api_key=api_key,
@@ -89,32 +117,26 @@ def handle_client(conn: socket.socket) -> None:
                 log.info("Client disconnected")
                 break
 
+            log.info(f"Received request type: {request.get('type')}")
             request_type = request.get("type")
-            log.info(f"Received request type: {request_type}")
 
             if request_type == "ping":
                 response = {"type": "pong", "status": "ok"}
 
             elif request_type == "prompt":
                 prompt = request.get("prompt", "")
-                try:
-                    result = call_llm(prompt)
-                    response = {"type": "response", "status": "ok", "result": result}
-                except Exception as e:
-                    # Print full traceback to enclave stdout for diagnosis
-                    log.error(f"LLM call failed: {type(e).__name__}: {e}")
-                    log.error(f"Full traceback:\n{traceback.format_exc()}")
-                    response = {
-                        "type": "error",
-                        "status": "error",
-                        "message": f"{type(e).__name__}: {e}",
-                    }
+                if not prompt:
+                    response = {"type": "error", "status": "error", "message": "Empty prompt"}
+                else:
+                    try:
+                        result = call_llm(prompt)
+                        response = {"type": "response", "status": "ok", "result": result}
+                    except Exception as e:
+                        log.error(f"LLM call failed: {e}")
+                        response = {"type": "error", "status": "error", "message": str(e)}
             else:
-                response = {
-                    "type": "error",
-                    "status": "error",
-                    "message": f"Unknown request type: {request_type}",
-                }
+                response = {"type": "error", "status": "error",
+                           "message": f"Unknown request type: {request_type}"}
 
             send_message(conn, response)
             log.info(f"Sent response type: {response.get('type')}")
@@ -129,7 +151,9 @@ def main() -> None:
     log.info(f"Enclave process starting (PID={os.getpid()})")
     log.info(f"Python {sys.version}")
 
-    # Test basic TCP connectivity before accepting any client
+    # Provision the wrap key before anything touches /secrets
+    provision_key()
+
     log.info("Testing outbound TCP to api.anthropic.com:443 ...")
     try:
         test_sock = socket.create_connection(("api.anthropic.com", 443), timeout=10)

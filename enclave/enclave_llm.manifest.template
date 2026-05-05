@@ -9,14 +9,15 @@ loader.env.HOME = "/home/azureuser"
 loader.env.ENCLAVE_PORT = "7777"
 loader.env.PYTHONPATH = "/enclave/.venv/lib/python3.12/site-packages"
 loader.env.PYTHONHOME = ""
-loader.env.ANTHROPIC_API_KEY = { passthrough = true }
+loader.env.WRAP_KEY_HEX = { passthrough = true }
 
 fs.mounts = [
-  { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
-  { path = "/usr",              uri = "file:/usr" },
-  { path = "/etc",              uri = "file:/etc" },
-  { path = "/enclave",          uri = "file:." },
+  { path = "/usr", uri = "file:/usr" },
+  { path = "/etc", uri = "file:/etc" },
+  { path = "/enclave", uri = "file:." },
+  { path = "/secrets", uri = "file:/home/azureuser/confidential-ai/secrets", type = "encrypted", key_name = "api_key" },
 ]
 
 sys.insecure__allow_eventfd = true
@@ -53,12 +54,6 @@ sgx.trusted_files = [
   "file:.venv/lib/python3.12/site-packages/typing_inspection/",
 ]
 
-# These files are not secret but are required for correct operation.
-# /etc/resolv.conf — DNS resolver configuration, required for name resolution
-# /etc/hosts — local hostname mappings
-# /etc/os-release — read by the distro package (Anthropic SDK dependency)
-# /etc/nsswitch.conf — controls resolver lookup order (hosts → DNS)
-# /etc/ssl/certs/ — system CA bundle fallback
 sgx.allowed_files = [
   "file:/etc/resolv.conf",
   "file:/etc/hosts",
