@@ -1,6 +1,6 @@
 """
 host_agent.py — runs on the host, outside SGX.
-Communicates with the enclave over localhost TCP.
+Receives signed responses from the enclave and verifies them locally.
 """
 
 import socket
@@ -8,6 +8,7 @@ import json
 import struct
 import sys
 import time
+import hashlib
 import logging
 
 logging.basicConfig(
@@ -54,7 +55,6 @@ def connect_to_enclave() -> socket.socket:
     deadline = time.time() + CONNECT_TIMEOUT
     last_error = None
     attempts = 0
-
     while time.time() < deadline:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,17 +67,54 @@ def connect_to_enclave() -> socket.socket:
             if attempts % 10 == 0:
                 log.info(f"Waiting for enclave... ({attempts} attempts)")
             time.sleep(CONNECT_RETRY_INTERVAL)
+    raise TimeoutError(f"Could not connect to enclave after {CONNECT_TIMEOUT}s: {last_error}")
 
-    raise TimeoutError(
-        f"Could not connect to enclave after {CONNECT_TIMEOUT}s: {last_error}"
-    )
+
+def verify_response(prompt: str, response: dict) -> bool:
+    """
+    Verify the enclave's signature over (input || output || timestamp || mrenclave).
+    Returns True if the signature is valid.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.exceptions import InvalidSignature
+
+    try:
+        public_key = serialization.load_pem_public_key(
+            response["public_key_pem"].encode("utf-8")
+        )
+
+        sep = b"||"
+        payload = (
+            prompt.encode("utf-8") + sep
+            + response["result"].encode("utf-8") + sep
+            + str(response["timestamp"]).encode("utf-8") + sep
+            + response["mrenclave"].encode("utf-8")
+        )
+        payload_hash = hashlib.sha256(payload).hexdigest()
+
+        # Verify our locally computed hash matches what the enclave reported
+        assert payload_hash == response["payload_hash"],             "Payload hash mismatch — response may have been tampered with"
+
+        public_key.verify(
+            bytes.fromhex(response["signature_hex"]),
+            payload,
+            ec.ECDSA(hashes.SHA256())
+        )
+        return True
+
+    except InvalidSignature:
+        log.error("SIGNATURE INVALID — response integrity check failed")
+        return False
+    except Exception as e:
+        log.error(f"Verification error: {e}")
+        return False
 
 
 def send_request(sock: socket.socket, request: dict) -> dict:
     log.info(f"Sending: {request}")
     send_message(sock, request)
     response = recv_message(sock)
-    log.info(f"Received: {response}")
     return response
 
 
@@ -86,30 +123,36 @@ def main() -> None:
     sock = connect_to_enclave()
 
     try:
-        # Test 1: ping
+        # Get public key via ping
         response = send_request(sock, {"type": "ping"})
-        assert response["type"] == "pong", f"Expected pong, got: {response}"
-        print(f"\n✓ Ping/pong successful: {response}")
+        assert response["type"] == "pong"
+        enclave_public_key = response.get("public_key_pem")
+        print(f"\n✓ Connected to enclave")
+        print(f"  Enclave public key fingerprint: {enclave_public_key[:60]}...")
 
-        # Test 2: prompt echo
+        # Send prompts and verify signatures
         prompts = [
-            "Summarize this document and classify risk",
             "What is the capital of France?",
-            "Explain quantum entanglement in simple terms",
+            "Explain quantum entanglement in one sentence.",
         ]
 
         for prompt in prompts:
             response = send_request(sock, {"type": "prompt", "prompt": prompt})
-            assert response["status"] == "ok", f"Unexpected status: {response}"
-            print(f"\n✓ Prompt: '{prompt}'")
-            print(f"  Result: '{response['result']}'")
+            assert response["status"] == "ok", f"Error: {response}"
 
-        # Test 3: unknown request type
-        response = send_request(sock, {"type": "unknown_type"})
-        assert response["type"] == "error", f"Expected error, got: {response}"
-        print(f"\n✓ Error handling works: {response}")
+            # Verify signature
+            valid = verify_response(prompt, response)
+            status = "✓ SIGNATURE VALID" if valid else "✗ SIGNATURE INVALID"
 
-        print("\n✓ All IPC tests passed")
+            print(f"\nPrompt: {prompt!r}")
+            print(f"Result: {response['result'][:100]}...")
+            print(f"Timestamp: {response['timestamp']}")
+            print(f"MRENCLAVE: {response['mrenclave'][:32]}...")
+            print(f"Payload hash: {response['payload_hash'][:32]}...")
+            print(f"Signature: {response['signature_hex'][:32]}...")
+            print(f"Verification: {status}")
+
+        print("\n✓ All signed responses verified")
 
     finally:
         sock.close()

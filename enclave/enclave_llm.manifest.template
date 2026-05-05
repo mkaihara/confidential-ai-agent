@@ -52,6 +52,11 @@ sgx.trusted_files = [
   "file:.venv/lib/python3.12/site-packages/typing_extensions.py",
   "file:.venv/lib/python3.12/site-packages/docstring_parser/",
   "file:.venv/lib/python3.12/site-packages/typing_inspection/",
+  "file:.venv/lib/python3.12/site-packages/cryptography/",
+  "file:.venv/lib/python3.12/site-packages/_cffi_backend.cpython-312-x86_64-linux-gnu.so",
+  "file:.venv/lib/python3.12/site-packages/cryptography/hazmat/bindings/_rust.abi3.so",
+  "file:.venv/lib/python3.12/site-packages/jiter/jiter.cpython-312-x86_64-linux-gnu.so",
+  "file:.venv/lib/python3.12/site-packages/pydantic_core/_pydantic_core.cpython-312-x86_64-linux-gnu.so",
 ]
 
 sgx.allowed_files = [
@@ -61,4 +66,6 @@ sgx.allowed_files = [
   "file:/etc/nsswitch.conf",
   "file:/etc/os-release",
   "file:/etc/gai.conf",
+  "file:/dev/attestation/report",
+  "file:/dev/attestation/keys/api_key",
 ]
