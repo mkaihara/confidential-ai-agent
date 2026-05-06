@@ -12,12 +12,13 @@ loader.env.PYTHONHOME = ""
 loader.env.WRAP_KEY_HEX = { passthrough = true }
 
 fs.mounts = [
-  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
   { path = "{{ arch_libdir }}", uri = "file:{{ arch_libdir }}" },
-  { path = "/usr", uri = "file:/usr" },
-  { path = "/etc", uri = "file:/etc" },
-  { path = "/enclave", uri = "file:." },
+  { path = "/usr",              uri = "file:/usr" },
+  { path = "/etc",              uri = "file:/etc" },
+  { path = "/enclave",          uri = "file:." },
   { path = "/secrets", uri = "file:/home/azureuser/confidential-ai/secrets", type = "encrypted", key_name = "api_key" },
+  { path = "/sealed",  uri = "file:/home/azureuser/confidential-ai/sealed",  type = "encrypted", key_name = "_sgx_mrenclave" },
 ]
 
 sys.insecure__allow_eventfd = true
@@ -67,6 +68,7 @@ sgx.allowed_files = [
   "file:/etc/nsswitch.conf",
   "file:/etc/os-release",
   "file:/etc/gai.conf",
+  "file:/dev/attestation/user_report_data",
   "file:/dev/attestation/report",
   "file:/dev/attestation/quote",
   "file:/dev/attestation/attestation_type",

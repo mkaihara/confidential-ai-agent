@@ -33,13 +33,61 @@ _mrenclave_hex = None
 _dcap_quote_hex = ""
 
 
+SEALED_WRAP_KEY_PATH = "/sealed/wrap_key"
+
+
 def provision_key() -> None:
-    wrap_key_hex = os.environ.get("WRAP_KEY_HEX", "")
-    if not wrap_key_hex:
-        raise RuntimeError("WRAP_KEY_HEX not set")
-    wrap_key_bytes = bytes.fromhex(wrap_key_hex)
-    if len(wrap_key_bytes) != 16:
-        raise RuntimeError(f"Wrap key must be 16 bytes, got {len(wrap_key_bytes)}")
+    """
+    Provision the wrap key for the encrypted /secrets mount.
+
+    Bootstrap logic:
+    1. If /sealed/wrap_key exists (sealed with _sgx_mrenclave key),
+       load it from there — no external secret needed on subsequent runs.
+    2. If not, read WRAP_KEY_HEX from environment, provision it,
+       then seal it to /sealed/wrap_key for future runs.
+    3. If neither exists, fail with a clear error.
+
+    /sealed uses Gramine's _sgx_mrenclave key — derived from the enclave
+    measurement and the CPU hardware secret. Only this exact enclave on
+    this exact CPU can decrypt it.
+    """
+    wrap_key_bytes = None
+
+    # Try loading from sealed storage first
+    try:
+        with open(SEALED_WRAP_KEY_PATH, "rb") as f:
+            wrap_key_bytes = f.read()
+        if len(wrap_key_bytes) == 16:
+            log.info("Wrap key loaded from sealed storage (/sealed/wrap_key)")
+        else:
+            log.warning(f"Sealed wrap key has wrong size ({len(wrap_key_bytes)}), ignoring")
+            wrap_key_bytes = None
+    except FileNotFoundError:
+        log.info("No sealed wrap key found — checking environment")
+    except Exception as e:
+        log.warning(f"Failed to read sealed wrap key: {e} — checking environment")
+
+    # Fall back to environment variable
+    if wrap_key_bytes is None:
+        wrap_key_hex = os.environ.get("WRAP_KEY_HEX", "")
+        if not wrap_key_hex:
+            raise RuntimeError(
+                "Wrap key not found. "
+                "Provide WRAP_KEY_HEX on first run, or ensure /sealed/wrap_key exists."
+            )        
+        wrap_key_bytes = bytes.fromhex(wrap_key_hex)
+        if len(wrap_key_bytes) != 16:
+            raise RuntimeError(f"WRAP_KEY_HEX must be 16 bytes, got {len(wrap_key_bytes)}")
+
+        # Seal the wrap key for future runs
+        try:
+            with open(SEALED_WRAP_KEY_PATH, "wb") as f:
+                f.write(wrap_key_bytes)
+            log.info("Wrap key sealed to /sealed/wrap_key (future runs need no env var)")
+        except Exception as e:
+            log.warning(f"Could not seal wrap key: {e} — will require WRAP_KEY_HEX on next run")
+
+    # Provision to Gramine's key slot
     with open(WRAP_KEY_PATH, "wb") as f:
         f.write(wrap_key_bytes)
     log.info("Wrap key provisioned to /dev/attestation/keys/api_key")

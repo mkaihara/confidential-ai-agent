@@ -231,3 +231,4 @@ wrap_key.hex
 enclave_quote.bin
 expected_mrenclave.txt
 sample_response.json
+audit_log.jsonl
