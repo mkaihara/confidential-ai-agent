@@ -127,8 +127,17 @@ def main() -> None:
         response = send_request(sock, {"type": "ping"})
         assert response["type"] == "pong"
         enclave_public_key = response.get("public_key_pem")
+        dcap_quote_hex = response.get("dcap_quote_hex", "")
         print(f"\n✓ Connected to enclave")
         print(f"  Enclave public key fingerprint: {enclave_public_key[:60]}...")
+        if dcap_quote_hex:
+            print(f"  DCAP quote: {len(dcap_quote_hex)//2} bytes ({dcap_quote_hex[:32]}...)")
+            # Save quote to file for offline verification
+            with open("enclave_quote.bin", "wb") as f:
+                f.write(bytes.fromhex(dcap_quote_hex))
+            print(f"  Quote saved to: enclave_quote.bin")
+        else:
+            print(f"  DCAP quote: not available")
 
         # Send prompts and verify signatures
         prompts = [

@@ -32,6 +32,7 @@ _anthropic_client = None
 _signing_key = None
 _signing_key_public_pem = None
 _mrenclave_hex = None
+_dcap_quote_hex = ""
 
 
 def provision_key() -> None:
@@ -154,6 +155,52 @@ def get_mrenclave() -> str:
     return _mrenclave_hex
 
 
+def generate_dcap_quote() -> str:
+    """
+    Generate a DCAP quote that cryptographically binds the signing key
+    to the enclave identity.
+
+    The quote's report_data field contains SHA256(public_key_der),
+    which ties the signing key to the MRENCLAVE measurement.
+    A verifier can confirm:
+      1. The quote signature chain → Intel CA (real SGX hardware)
+      2. MRENCLAVE in quote == expected value (correct code)
+      3. SHA256(public_key) == report_data in quote (key generated in this enclave)
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    # Compute SHA256 of the signing public key in DER format
+    pub_der = _signing_key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    pub_hash = hashlib.sha256(pub_der).digest()  # 32 bytes
+
+    # report_data is 64 bytes — put key hash in first 32, zeros in last 32
+    report_data = pub_hash + b"\x00" * 32
+
+    try:
+        # Write report_data to trigger quote generation
+        with open("/dev/attestation/user_report_data", "wb") as f:
+            f.write(report_data)
+
+        # Read the DCAP quote
+        with open("/dev/attestation/quote", "rb") as f:
+            quote_bytes = f.read()
+
+        quote_hex = quote_bytes.hex()
+        log.info(f"DCAP quote generated ({len(quote_bytes)} bytes)")
+        log.info(f"Quote report_data (pub key hash): {pub_hash.hex()}")
+        return quote_hex
+
+    except FileNotFoundError as e:
+        log.warning(f"DCAP quote not available: {e}")
+        return ""
+    except Exception as e:
+        log.error(f"DCAP quote generation failed: {type(e).__name__}: {e}")
+        return ""
+
+
 def load_api_key() -> str:
     with open(API_KEY_PATH, "r") as f:
         key = f.read().strip()
@@ -233,6 +280,7 @@ def handle_client(conn: socket.socket) -> None:
                     "type": "pong",
                     "status": "ok",
                     "public_key_pem": _signing_key_public_pem,
+                    "dcap_quote_hex": _dcap_quote_hex,
                 }
 
             elif request_type == "prompt":
@@ -295,6 +343,10 @@ def main() -> None:
         log.info(f"/dev/attestation contents: {entries}")
     except Exception as e:
         log.warning(f"Cannot list /dev/attestation: {e}")
+
+    # Generate DCAP quote at startup — binds signing key to enclave identity
+    global _dcap_quote_hex
+    _dcap_quote_hex = generate_dcap_quote()
 
     log.info("Testing outbound TCP to api.anthropic.com:443 ...")
     try:
