@@ -131,11 +131,40 @@ def main() -> None:
         print(f"\n✓ Connected to enclave")
         print(f"  Enclave public key fingerprint: {enclave_public_key[:60]}...")
         if dcap_quote_hex:
-            print(f"  DCAP quote: {len(dcap_quote_hex)//2} bytes ({dcap_quote_hex[:32]}...)")
+            quote_bytes = bytes.fromhex(dcap_quote_hex)
+            print(f"  DCAP quote: {len(quote_bytes)} bytes ({dcap_quote_hex[:32]}...)")
+
             # Save quote to file for offline verification
             with open("enclave_quote.bin", "wb") as f:
-                f.write(bytes.fromhex(dcap_quote_hex))
+                f.write(quote_bytes)
             print(f"  Quote saved to: enclave_quote.bin")
+
+            # Verify quote inline
+            expected_mrenclave = ""
+            try:
+                with open("../expected_mrenclave.txt", "r") as f:
+                    expected_mrenclave = f.read().strip()
+            except FileNotFoundError:
+                log.warning("expected_mrenclave.txt not found — skipping MRENCLAVE check")
+
+            if expected_mrenclave:
+                import sys, os
+                sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+                from verify.quote_verifier import verify_structural, verify_cryptographic
+
+                structural = verify_structural(quote_bytes, enclave_public_key, expected_mrenclave)
+                print(f"  Quote structural check: {'PASS' if structural['passed'] else 'FAIL'}")
+                if structural["errors"]:
+                    for err in structural["errors"]:
+                        print(f"    ERROR: {err}")
+
+                crypto = verify_cryptographic(quote_bytes)
+                print(f"  Quote crypto check:     {'PASS' if crypto['passed'] else 'FAIL'}")
+                if crypto.get("verification_result_description"):
+                    print(f"    Result: {crypto['verification_result_description']}")
+                if crypto["errors"]:
+                    for err in crypto["errors"]:
+                        print(f"    ERROR: {err}")
         else:
             print(f"  DCAP quote: not available")
 
