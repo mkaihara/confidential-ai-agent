@@ -225,6 +225,7 @@ __marimo__/
 
 anthropic_api_key.txt
 anthropic_api_key.txt.plain
+
 wrap_key.bin
 wrap_key.hex
 
@@ -232,3 +233,5 @@ enclave_quote.bin
 expected_mrenclave.txt
 sample_response.json
 audit_log.jsonl
+
+wrap_key
