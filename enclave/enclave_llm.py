@@ -1,8 +1,6 @@
 """
 enclave_llm.py — runs inside SGX via Gramine.
-Phase 4: ECDSA signing key generated inside enclave.
-Every LLM response is signed with sign(SHA256(input || output || timestamp || mrenclave)).
-The private key never leaves the enclave.
+Phase 5: Added DCAP quote generation to bind signing key to enclave identity.
 """
 
 import socket
