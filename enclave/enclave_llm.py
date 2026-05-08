@@ -21,10 +21,7 @@ log = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ENCLAVE_PORT", "7777"))
-API_KEY_PATH = "/secrets/anthropic_api_key.txt"
 CERT_PATH = "/enclave/.venv/lib/python3.12/site-packages/certifi/cacert.pem"
-WRAP_KEY_PATH = "/dev/attestation/keys/api_key"
-MRENCLAVE_PATH = "/dev/attestation/report_data"
 
 _anthropic_client = None
 _signing_key = None
@@ -32,91 +29,69 @@ _signing_key_public_pem = None
 _mrenclave_hex = None
 _dcap_quote_hex = ""
 
-
-SEALED_WRAP_KEY_PATH = "/sealed/wrap_key"
-
-
-def provision_key() -> None:
-    """
-    Provision the wrap key for the encrypted /secrets mount.
-
-    Bootstrap logic:
-    1. If /sealed/wrap_key exists (sealed with _sgx_mrenclave key),
-       load it from there — no external secret needed on subsequent runs.
-    2. If not, read WRAP_KEY_HEX from environment, provision it,
-       then seal it to /sealed/wrap_key for future runs.
-    3. If neither exists, fail with a clear error.
-
-    /sealed uses Gramine's _sgx_mrenclave key — derived from the enclave
-    measurement and the CPU hardware secret. Only this exact enclave on
-    this exact CPU can decrypt it.
-    """
-    wrap_key_bytes = None
-
-    # Try loading from sealed storage first
-    try:
-        with open(SEALED_WRAP_KEY_PATH, "rb") as f:
-            wrap_key_bytes = f.read()
-        if len(wrap_key_bytes) == 16:
-            log.info("Wrap key loaded from sealed storage (/sealed/wrap_key)")
-        else:
-            log.warning(f"Sealed wrap key has wrong size ({len(wrap_key_bytes)}), ignoring")
-            wrap_key_bytes = None
-    except FileNotFoundError:
-        log.info("No sealed wrap key found — checking environment")
-    except Exception as e:
-        log.warning(f"Failed to read sealed wrap key: {e} — checking environment")
-
-    # Fall back to environment variable
-    if wrap_key_bytes is None:
-        wrap_key_hex = os.environ.get("WRAP_KEY_HEX", "")
-        if not wrap_key_hex:
-            raise RuntimeError(
-                "Wrap key not found. "
-                "Provide WRAP_KEY_HEX on first run, or ensure /sealed/wrap_key exists."
-            )        
-        wrap_key_bytes = bytes.fromhex(wrap_key_hex)
-        if len(wrap_key_bytes) != 16:
-            raise RuntimeError(f"WRAP_KEY_HEX must be 16 bytes, got {len(wrap_key_bytes)}")
-
-        # Seal the wrap key for future runs
-        try:
-            with open(SEALED_WRAP_KEY_PATH, "wb") as f:
-                f.write(wrap_key_bytes)
-            log.info("Wrap key sealed to /sealed/wrap_key (future runs need no env var)")
-        except Exception as e:
-            log.warning(f"Could not seal wrap key: {e} — will require WRAP_KEY_HEX on next run")
-
-    # Provision to Gramine's key slot
-    with open(WRAP_KEY_PATH, "wb") as f:
-        f.write(wrap_key_bytes)
-    log.info("Wrap key provisioned to /dev/attestation/keys/api_key")
-
+SEALED_API_KEY_PATH = "/sealed/anthropic_api_key"
+SEALED_SIGNING_KEY_PATH = "/sealed/signing_key"
 
 def generate_signing_key():
     """
-    Generate ECDSA P-256 key pair inside the enclave.
-    The private key is held in memory only — never written to disk,
-    never sent outside the enclave boundary.
+    Load or generate the ECDSA P-256 signing key pair.
+
+    If /sealed/signing_key exists (encrypted with _sgx_mrenclave hardware key),
+    load and deserialize the private key from there — preserving enclave identity
+    across restarts.
+
+    If not, generate a new key pair and seal the private key to
+    /sealed/signing_key for future runs.
+
+    The private key never leaves the enclave. The /sealed mount uses
+    key_name = "_sgx_mrenclave", meaning only this exact enclave measurement
+    on this exact CPU can decrypt it. A code change invalidates the sealed key,
+    which is correct — a new enclave version should establish a new identity.
     """
     global _signing_key, _signing_key_public_pem
 
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives import serialization
 
-    _signing_key = ec.generate_private_key(ec.SECP256R1())
+    # Try loading sealed private key
+    try:
+        with open(SEALED_SIGNING_KEY_PATH, "rb") as f:
+            key_pem = f.read()
+        _signing_key = serialization.load_pem_private_key(key_pem, password=None)
+        log.info("Signing key loaded from sealed storage (/sealed/signing_key)")
+    except FileNotFoundError:
+        log.info("No sealed signing key found — generating new key pair")
+        _signing_key = ec.generate_private_key(ec.SECP256R1())
+
+        # Seal the private key
+        key_pem = _signing_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        try:
+            with open(SEALED_SIGNING_KEY_PATH, "wb") as f:
+                f.write(key_pem)
+            log.info("Signing key sealed to /sealed/signing_key")
+        except Exception as e:
+            log.warning(f"Could not seal signing key: {e} — key is ephemeral this session")
+
+    except Exception as e:
+        log.warning(f"Failed to load sealed signing key: {e} — generating new key pair")
+        _signing_key = ec.generate_private_key(ec.SECP256R1())
+
+    # Derive public key PEM
     _signing_key_public_pem = _signing_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     ).decode("utf-8")
 
-    # Log the public key fingerprint (SHA256 of DER) for identification
     pub_der = _signing_key.public_key().public_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
     fingerprint = hashlib.sha256(pub_der).hexdigest()[:16]
-    log.info(f"Signing key generated (fingerprint: {fingerprint}...)")
+    log.info(f"Signing key fingerprint: {fingerprint}...")
     log.info(f"Public key:\n{_signing_key_public_pem}")
 
 
@@ -248,11 +223,42 @@ def generate_dcap_quote() -> str:
 
 
 def load_api_key() -> str:
-    with open(API_KEY_PATH, "r") as f:
-        key = f.read().strip()
+    """
+    Load the Anthropic API key using the same sealed bootstrap pattern
+    as the signing key. On first run, reads from ANTHROPIC_API_KEY env
+    var and seals it to /sealed/anthropic_api_key using the _sgx_mrenclave
+    hardware key. On subsequent runs, loads directly from sealed storage.
+    No external wrap key required.
+    """
+    # Try sealed storage first
+    try:
+        with open(SEALED_API_KEY_PATH, "r") as f:
+            key = f.read().strip()
+        if key:
+            log.info("API key loaded from sealed storage (/sealed/anthropic_api_key)")
+            return key
+        log.warning("Sealed API key file is empty — checking environment")
+    except FileNotFoundError:
+        log.info("No sealed API key found — checking environment")
+    except Exception as e:
+        log.warning(f"Failed to read sealed API key: {e} — checking environment")
+
+    # Fall back to environment variable
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
-        raise RuntimeError(f"API key file is empty: {API_KEY_PATH}")
-    log.info("API key loaded from encrypted storage")
+        raise RuntimeError(
+            "API key not found. "
+            "Provide ANTHROPIC_API_KEY on first run, or ensure /sealed/anthropic_api_key exists."
+        )
+
+    # Seal for future runs
+    try:
+        with open(SEALED_API_KEY_PATH, "w") as f:
+            f.write(key)
+        log.info("API key sealed to /sealed/anthropic_api_key (future runs need no env var)")
+    except Exception as e:
+        log.warning(f"Could not seal API key: {e} — will require ANTHROPIC_API_KEY on next run")
+
     return key
 
 
@@ -379,8 +385,7 @@ def handle_client(conn: socket.socket) -> None:
 def main() -> None:
     log.info(f"Enclave process starting (PID={os.getpid()})")
     log.info(f"Python {sys.version}")
-
-    provision_key()
+    
     generate_signing_key()
 
     # Diagnostic — list /dev/attestation contents
