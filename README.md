@@ -338,6 +338,9 @@ The enclave loads both the API key and the signing key from sealed storage with 
 
 ### Sample session
 
+![Terminal_1](images/Terminal_1.png)
+![Terminal_2](images/Terminal_2.png)
+
 ```
 ============================================================
   Confidential AI Agent
