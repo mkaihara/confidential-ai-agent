@@ -20,5 +20,4 @@ sgx: enclave_llm.manifest.sgx enclave_llm.sig
 
 clean:
 	rm -f enclave_llm.manifest enclave_llm.manifest.sgx \
-	      enclave_llm.sig enclave_llm.token \
-	      hello.manifest hello.manifest.sgx hello.sig hello.token
+	      enclave_llm.sig enclave_llm.token 	      

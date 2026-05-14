@@ -13,8 +13,6 @@ Requires Intel/Azure THIM infrastructure.
 import struct
 import hashlib
 import ctypes
-import ctypes.util
-import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -123,7 +121,7 @@ def verify_structural(
 
     # Check report_data == SHA256(public_key_der)
     try:
-        pub_key = serialization.load_pem_public_key(public_key_pem.encode())
+        pub_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
         pub_der = pub_key.public_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -322,7 +320,7 @@ def verify_response_signature(
     }
 
     try:
-        public_key = serialization.load_pem_public_key(public_key_pem.encode())
+        public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
 
         sep = b"||"
         payload = (
@@ -335,8 +333,8 @@ def verify_response_signature(
         computed_hash = hashlib.sha256(payload).hexdigest()
         if computed_hash != payload_hash:
             results["errors"].append(
-                f"Payload hash mismatch:\n"
-                f"  computed: {computed_hash}\n"
+                f"Payload hash mismatch:"
+                f"  computed: {computed_hash}"
                 f"  claimed:  {payload_hash}"
             )
             return results

@@ -1,6 +1,49 @@
 """
-enclave_llm.py — runs inside SGX via Gramine.
-Phase 5: Added DCAP quote generation to bind signing key to enclave identity.
+enclave_llm.py — the enclave process for the Confidential AI Agent.
+
+This process runs inside an Intel SGX enclave managed by Gramine. The source
+code is intentionally public and auditable — anyone can read it and verify that
+it matches the published MRENCLAVE measurement. What SGX protects is the runtime
+execution: the decrypted secrets in memory, the LLM call in flight, and the
+signing operation. The host OS, hypervisor, and other processes cannot read
+enclave memory while the process is running.
+
+What this process does:
+
+  1. Key management. On first run, it reads the Anthropic API key from the
+     ANTHROPIC_API_KEY environment variable and seals it to /sealed/anthropic_api_key
+     using a hardware-derived key tied to this enclave's MRENCLAVE measurement.
+     On all subsequent runs, it loads the key directly from sealed storage.
+     The same bootstrap pattern applies to the ECDSA signing key.
+
+  2. LLM calls. It receives prompts from the host over a TCP socket, calls the
+     Claude API using the sealed API key, and returns the response. The TLS
+     certificate is verified against a CA bundle (certifi) that is measured in
+     MRENCLAVE, so a DNS-hijacked server cannot pass certificate verification.
+
+  3. Output signing. Every response is signed with ECDSA P-256 over
+     SHA256(prompt || result || timestamp || MRENCLAVE). The signing private key
+     lives only in sealed storage and in enclave memory — it is never exported.
+
+  4. Attestation. At startup, it writes SHA256(signing_public_key) into the
+     DCAP quote's report_data field. This cryptographically binds the signing
+     key to the enclave identity. A verifier can check: (a) the quote is signed
+     by Intel's CA — proving real SGX hardware, (b) MRENCLAVE matches the
+     expected value — proving the correct code is running, and (c) report_data
+     matches the public key — proving the signing key was generated inside
+     this specific enclave.
+
+Sealed storage (/sealed mount):
+  Uses Gramine's key_name = "_sgx_mrenclave". The decryption key is derived
+  from MRENCLAVE and the CPU's hardware fuse secret. Only this exact enclave
+  on this exact physical CPU can decrypt the sealed files. Changing any line
+  of enclave code or the manifest changes MRENCLAVE, which makes all sealed
+  files permanently unreadable and requires re-bootstrapping.
+
+What the host sees:
+  Prompts (sent by the host), responses (returned by the enclave), signatures,
+  and the DCAP quote. The host never sees the API key, the signing private key,
+  or any intermediate state of the LLM call.
 """
 
 import socket
@@ -17,7 +60,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="[ENCLAVE] %(asctime)s %(levelname)s %(message)s"
 )
-log = logging.getLogger(__name__)
+log = logging.getLogger("enclave")
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ENCLAVE_PORT", "7777"))
@@ -31,6 +74,10 @@ _dcap_quote_hex = ""
 
 SEALED_API_KEY_PATH = "/sealed/anthropic_api_key"
 SEALED_SIGNING_KEY_PATH = "/sealed/signing_key"
+
+MAX_LENGTH_MESSAGE = 10 * 1024 * 1024  # 10 MB
+MAX_TOKENS_RESPONSE = 1024
+
 
 def generate_signing_key():
     """
@@ -142,7 +189,7 @@ def get_mrenclave() -> str:
     The SGX report (sgx_report_t) layout relevant offsets:
       - report_data (64 bytes) must be written to user_report_data first
       - After writing user_report_data, reading report returns sgx_report_t
-      - MRENCLAVE is at bytes 176..208 of sgx_report_t (32 bytes)
+      - MRENCLAVE is at bytes 64..96 of sgx_report_t (32 bytes)
 
     sgx_report_t structure (512 bytes total):
       offset   0: cpu_svn (16 bytes)
@@ -227,8 +274,7 @@ def load_api_key() -> str:
     Load the Anthropic API key using the same sealed bootstrap pattern
     as the signing key. On first run, reads from ANTHROPIC_API_KEY env
     var and seals it to /sealed/anthropic_api_key using the _sgx_mrenclave
-    hardware key. On subsequent runs, loads directly from sealed storage.
-    No external wrap key required.
+    hardware key. On subsequent runs, loads directly from sealed storage.    
     """
     # Try sealed storage first
     try:
@@ -281,7 +327,7 @@ def call_llm(prompt: str) -> str:
     client = get_client()
     message = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=1024,
+        max_tokens=MAX_TOKENS_RESPONSE,
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text
@@ -298,7 +344,7 @@ def recv_message(sock: socket.socket) -> dict:
     if not header:
         raise ConnectionResetError("Client disconnected")
     length = struct.unpack(">I", header)[0]
-    if length > 10 * 1024 * 1024:
+    if length > MAX_LENGTH_MESSAGE:
         raise ValueError(f"Message too large: {length} bytes")
     data = _recv_exact(sock, length)
     return json.loads(data.decode("utf-8"))

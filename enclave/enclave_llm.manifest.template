@@ -22,7 +22,7 @@ fs.mounts = [
 
 sys.insecure__allow_eventfd = true
 
-sgx.debug = true
+sgx.debug = false
 sgx.remote_attestation = "dcap"
 sgx.edmm_enable = false
 sgx.enclave_size = "512M"

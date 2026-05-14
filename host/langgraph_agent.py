@@ -15,7 +15,6 @@ import socket
 import json
 import struct
 import sys
-import os
 import time
 import hashlib
 import logging
@@ -35,7 +34,7 @@ logging.basicConfig(
     level=logging.WARNING,
     format="[HOST] %(asctime)s %(levelname)s %(message)s"
 )
-log = logging.getLogger(__name__)
+log = logging.getLogger("host")
 
 # Enclave connection config
 ENCLAVE_HOST = "127.0.0.1"
@@ -138,6 +137,12 @@ def node_connect_and_attest(state: AgentState) -> dict:
 
     if dcap_quote_hex and expected_mrenclave:
         quote_bytes = bytes.fromhex(dcap_quote_hex)
+        print(f"  DCAP quote: {len(quote_bytes)} bytes ({dcap_quote_hex[:32]}...)")
+
+        # Save quote to file for offline verification
+        with open("enclave_quote.bin", "wb") as f:
+            f.write(quote_bytes)
+        print(f"  Quote saved to: enclave_quote.bin")
 
         structural = verify_structural(quote_bytes, public_key_pem, expected_mrenclave)
         crypto = verify_cryptographic(quote_bytes)
@@ -211,10 +216,10 @@ def node_call_enclave(state: AgentState) -> dict:
         return {"messages": [AIMessage(content=f"[Enclave error: {error_msg}]")]}
 
     result = response["result"]
-    timestamp = response["timestamp"]
-    mrenclave = response["mrenclave"]
+    timestamp = response["timestamp"]    
     signature_hex = response["signature_hex"]
     public_key_pem = response["public_key_pem"]
+    mrenclave = response["mrenclave"]
     payload_hash = response["payload_hash"]
 
     # Print the response to the user
@@ -241,15 +246,16 @@ def node_call_enclave(state: AgentState) -> dict:
     # Build audit entry
     audit_entry = {
         "timestamp": timestamp,
-        "prompt": last_human,
-        "full_prompt_hash": hashlib.sha256(full_prompt.encode()).hexdigest(),
+        "prompt": full_prompt,
+        "full_prompt_hash": hashlib.sha256(full_prompt.encode("utf-8")).hexdigest(),
         "result": result,
-        "result_hash": hashlib.sha256(result.encode()).hexdigest(),
+        "result_hash": hashlib.sha256(result.encode("utf-8")).hexdigest(),
         "mrenclave": mrenclave,
-        "signature_hex": signature_hex[:32] + "...",
+        "signature_hex": signature_hex,
         "payload_hash": payload_hash,
         "signature_valid": verified,
         "quote_verified": state["quote_verified"],
+        "public_key_pem": public_key_pem,
     }
     append_audit_log(audit_entry)
 
@@ -260,15 +266,6 @@ def node_call_enclave(state: AgentState) -> dict:
         "last_verification": sig_verification,
         "audit_entries": new_entries,
     }
-
-
-def node_should_continue(state: AgentState) -> str:
-    """Route back to call_enclave for next user message, or end."""
-    messages = state["messages"]
-    last = messages[-1] if messages else None
-    if isinstance(last, AIMessage):
-        return "get_input"
-    return "call_enclave"
 
 
 def node_get_input(state: AgentState) -> dict:
