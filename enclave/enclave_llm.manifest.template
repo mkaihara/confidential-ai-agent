@@ -17,7 +17,7 @@ fs.mounts = [
   { path = "/usr",              uri = "file:/usr" },
   { path = "/etc",              uri = "file:/etc" },
   { path = "/enclave",          uri = "file:." },
-  { path = "/sealed", uri = "file:/home/azureuser/confidential-ai/sealed", type = "encrypted", key_name = "_sgx_mrenclave" },
+  { path = "/sealed", uri = "file:/home/azureuser/confidential-ai-agent/sealed", type = "encrypted", key_name = "_sgx_mrenclave" },
 ]
 
 sys.insecure__allow_eventfd = true
