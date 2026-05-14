@@ -338,38 +338,8 @@ The enclave loads both the API key and the signing key from sealed storage with 
 
 ### Sample session
 
-![Terminal_1](images/Terminal_1.png)
 ![Terminal_2](images/Terminal_2.png)
-
-```
-============================================================
-  Confidential AI Agent
-  LLM calls execute inside Intel SGX enclave
-  Every response is cryptographically signed
-============================================================
-
-[Agent] Connecting to enclave...
-[Agent] ✓ Enclave attested successfully
-[Agent]   MRENCLAVE: 1be5c23f7e86c0d0...
-
-You: My name is Marcelo
-
-A: Hello Marcelo! Nice to meet you. How can I help you today?
-
-[Agent] ✓ Response signature: VALID
-
-You: What is my name?
-
-A: Your name is Marcelo, as you just told me!
-
-[Agent] ✓ Response signature: VALID
-
-You: /exit
-
-[Agent] Session ended
-[Agent] Audit log: /home/azureuser/confidential-ai/audit_log.jsonl
-[Agent] Responses: 2 total, 2 verified
-```
+![Terminal_1](images/Terminal_1.png)
 
 ---
 
