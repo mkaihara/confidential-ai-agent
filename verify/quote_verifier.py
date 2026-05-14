@@ -14,7 +14,6 @@ import struct
 import hashlib
 import ctypes
 from dataclasses import dataclass
-from typing import Optional
 
 
 # SGX Quote v3 offsets (bytes)
