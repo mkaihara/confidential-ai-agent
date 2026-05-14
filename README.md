@@ -77,17 +77,6 @@ The combination is new. Gramine running the Anthropic Python SDK with sealed sto
 
 ### What this system defends against
 
-| Attack | Defense |
-|---|---|
-| Read API key from host memory | Key exists only in EPC, encrypted by CPU MEE |
-| Read API key from disk | Encrypted with `_sgx_mrenclave` key — requires MRENCLAVE + CPU hardware secret |
-| Modify enclave code to exfiltrate key | MRENCLAVE changes, sealed files become unreadable, quote verification fails |
-| Run different enclave code | MRENCLAVE changes — verifier detects mismatch, sealed files unreadable |
-| Run same enclave code on a different CPU | Sealed files unreadable — hardware fuse secret differs, decryption fails. MRENCLAVE check passes but the enclave cannot bootstrap.|
-| Forge a response signature | Private key never exits enclave memory |
-| Replay an old response | Timestamp is bound into the signature |
-| Claim a different enclave produced the response | DCAP quote binds signing key to MRENCLAVE via Intel CA |
-
 | Attack | Defense | Relies on |
 |---|---|---|
 | Read API key from host memory | Key exists only in EPC, encrypted by CPU Memory Encryption Engine | Hardware (CPU MEE) |
