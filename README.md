@@ -1,3 +1,5 @@
+<p align="center"> <img src="images/confidential-ai-agent-banner.gif" alt="Banner" width="100%" /> </p>
+
 # Confidential AI Agent
 
 A LangGraph-based AI agent where the Claude API key and signing key live inside an Intel SGX enclave. The LLM call executes from inside the enclave. The host process never holds secrets. Every response is cryptographically signed and independently verifiable.
