@@ -62,6 +62,7 @@ The combination is new. Gramine running the Anthropic Python SDK with sealed sto
 │  Unreadable outside this exact enclave on this exact CPU    │
 └─────────────────────────────────────────────────────────────┘
 ```
+[Detailed Architecture](https://www.marcelokaihara.com/architecture.html)
 
 ---
 
