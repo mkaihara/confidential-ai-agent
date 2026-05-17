@@ -144,7 +144,7 @@ The verifier runs three independent checks:
 
 A response passes verification only if all three checks succeed.
 
-![Verification](images/Example_verify)
+![Verification](images/Example_verify.png)
 
 ---
 
