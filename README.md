@@ -109,7 +109,7 @@ The combination is new. Gramine running the Anthropic Python SDK with sealed sto
 
 ---
 
-## How to verify a response
+## How to  a response
 
 The verification CLI does not require a running enclave or SGX hardware. It runs on any machine with the Intel DCAP libraries and Azure QPL installed.
 
@@ -143,6 +143,8 @@ The verifier runs three independent checks:
 **Response signature**. Rebuilds `SHA256(prompt ‖ result ‖ timestamp ‖ mrenclave)` and verifies the ECDSA-P256 signature. Proves the response has not been modified since it left the enclave.
 
 A response passes verification only if all three checks succeed.
+
+![Verification](images/Example_verify)
 
 ---
 
@@ -343,8 +345,7 @@ The enclave loads both the API key and the signing key from sealed storage with 
 
 ### Sample session
 
-![Terminal_2](images/Terminal_2.png)
-![Terminal_1](images/Terminal_1.png)
+![Host](images/Example_host.png)
 
 ---
 
@@ -380,9 +381,9 @@ confidential-ai/
 ├── host/
 │   ├── langgraph_agent.py             # LangGraph conversational agent
 │   └── host_agent.py                  # low-level test harness
-├── verify/
+├── /
 │   ├── quote_verifier.py              # verification engine (importable)
-│   └── verify_output.py               # standalone verification CLI
+│   └── _output.py               # standalone verification CLI
 ├── sealed/                            # hardware-encrypted secrets (gitignored)
 ├── expected_mrenclave.txt             # canonical enclave measurement
 ├── audit_log.jsonl                    # append-only session audit log
@@ -395,7 +396,7 @@ confidential-ai/
 
 **Bootstrap exposure.** The first run passes `ANTHROPIC_API_KEY` as an environment variable, visible to the host OS. After that single run the key is hardware-sealed and never appears in the clear again. In production, this bootstrap step should use a remote attestation provisioning flow: the enclave generates a DCAP quote, a trusted provisioning server verifies it, and sends the key encrypted to the enclave's public key over an attested TLS channel.
 
-**Post-quantum signing.** Output signing uses ECDSA-P256, which is vulnerable to Shor's algorithm on a sufficiently powerful quantum computer. A production deployment should use a hybrid scheme combining ECDSA-P256 with ML-DSA (NIST FIPS 204). The signing primitive in `enclave_llm.py` and the verification primitive in `verify/quote_verifier.py` are the only components that would need to change.
+**Post-quantum signing.** Output signing uses ECDSA-P256, which is vulnerable to Shor's algorithm on a sufficiently powerful quantum computer. A production deployment should use a hybrid scheme combining ECDSA-P256 with ML-DSA (NIST FIPS 204). The signing primitive in `enclave_llm.py` and the verification primitive in `/quote_verifier.py` are the only components that would need to change.
 
 **Policy enforcement.** The enclave signs whatever the LLM returns. A future version could add a policy engine inside the enclave that validates outputs before signing — for example, refusing to sign responses that contain known sensitive data patterns.
 
