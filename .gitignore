@@ -232,3 +232,5 @@ sample_response.json
 audit_log.jsonl
 
 response.json
+
+.DS_Store
