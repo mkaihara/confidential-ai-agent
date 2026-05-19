@@ -109,7 +109,7 @@ The combination is new. Gramine running the Anthropic Python SDK with sealed sto
 
 ---
 
-## How to  a response
+## How to verify a response
 
 The verification CLI does not require a running enclave or SGX hardware. It runs on any machine with the Intel DCAP libraries and Azure QPL installed.
 
