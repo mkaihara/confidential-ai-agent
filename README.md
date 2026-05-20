@@ -21,6 +21,14 @@ The combination is new. Gramine running the Anthropic Python SDK with sealed sto
 
 ---
 
+## Related work
+
+ETH Zurich researchers recently published the first comprehensive benchmark of confidential LLM inference across Intel SGX, TDX, and NVIDIA H100 Confidential Compute GPUs (arXiv:2509.18886, September 2025). They show that CPU TEEs impose under 10% throughput and 20% latency overhead on full Llama2 inference pipelines (7B, 13B, 70B parameters), using Gramine as the LibOS layer — the same stack used here. Their conclusion: TEEs are currently the only viable method for protecting LLM inference.
+
+That paper studies **confidential inference** — running model weights and the full inference pipeline inside the TEE to protect proprietary models and user prompts. This project studies a complementary problem: **verifiable agent execution** — running an agent that calls an external LLM API from inside the TEE, protecting the API credential and proving output integrity to a third party. The ETH Zurich results validate the underlying technology stack and performance assumptions this project relies on.
+
+---
+
 ## Architecture
 
 ```
@@ -441,3 +449,4 @@ confidential-ai/
 - [NIST ML-DSA (FIPS 204)](https://csrc.nist.gov/pubs/fips/204/final)
 - [Anthropic API documentation](https://docs.anthropic.com)
 - [LangGraph documentation](https://langchain-ai.github.io/langgraph/)
+- [Confidential LLM Inference: Performance and Cost Across CPU and GPU TEEs](https://arxiv.org/abs/2509.18886) — ETH Zurich, arXiv:2509.18886, September 2025
