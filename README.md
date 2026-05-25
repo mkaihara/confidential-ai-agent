@@ -391,7 +391,7 @@ confidential-ai/
 ├── host/
 │   ├── langgraph_agent.py             # LangGraph conversational agent
 │   └── host_agent.py                  # low-level test harness
-├── /
+├── verify/
 │   ├── quote_verifier.py              # verification engine (importable)
 │   └── _output.py               # standalone verification CLI
 ├── sealed/                            # hardware-encrypted secrets (gitignored)
