@@ -17,7 +17,7 @@ Built with Python, LangGraph, Gramine, and the Anthropic Claude API. Deployed on
 - DCAP remote attestation: a DCAP quote binds the signing key to the enclave measurement, verified against Intel's certificate authority
 - An independent verification CLI that validates the complete trust chain without requiring access to the running system
 
-The combination is new. Gramine running the Anthropic Python SDK with sealed storage, output signing, and DCAP attestation wired together in a LangGraph agent has no prior published implementation.
+This project combines Gramine, the Anthropic SDK, sealed storage, output signing, and DCAP attestation in a single agent.
 
 ---
 
